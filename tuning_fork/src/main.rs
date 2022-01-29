@@ -1,19 +1,24 @@
+use std::fs::File;
+use std::io::prelude::*;
 use plotters::prelude::*;
 use std::f64::consts::TAU;
+use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::{ByteOrder};
 
 type Seconds = usize;
 type SampleRate = usize;
 type Frequency = usize;
 
+const FREQUENCY: Frequency = 440;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let duration: Seconds =  1;
-    let rate: SampleRate =  300;
-    let freq: Frequency =  5;
+    let duration: Seconds =  20;
+    let rate: SampleRate =  44100;
     let amplitude = 1.0_f64;
 
     let num_of_samples = duration * rate;
 
-    let angle_increase_rate =  TAU * freq as f64 / num_of_samples as f64;
+    let angle_increase_rate =  TAU * FREQUENCY as f64 / num_of_samples as f64;
 
     let rate_of_decay = 0.01_f64.powf(1.0/num_of_samples as f64);
 
@@ -23,10 +28,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|i| amplitude * (angle_increase_rate * *i as f64).sin() * rate_of_decay.powi(*i as i32))
         .collect::<Vec<f64>>();
 
-    generate_graph(samples)
+    generate_graph(&samples);
+    write_to_binary(&samples)
 }
 
-fn generate_graph(val: Vec<f64>) -> Result<(), Box<dyn std::error::Error>> {
+/**
+ * This generates a raw binary file that can be opened
+ * by a program like Audacity.
+ * File > Import > Raw Data
+ *
+ * Select 64-bit Float for encoding
+ * Byte Order is Native
+ * Channels is Mono
+ * Sample rate is 44100
+ **/
+fn write_to_binary(val: &Vec<f64>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = File::create("tuning_fork.bin")?;
+    let mut bytes;
+    for v in val {
+        bytes = v.to_ne_bytes();
+        file.write_all(&bytes)?
+    }
+
+    Ok(())
+    //println!("{:?}", bytes);
+}
+
+fn generate_graph(val: &Vec<f64>) -> Result<(), Box<dyn std::error::Error>> {
 
     let root = SVGBackend::new("output.svg", (1240, 480)).into_drawing_area();
     root.fill(&WHITE)?;

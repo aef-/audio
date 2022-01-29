@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 plotters = { git = "https://github.com/38/plotters.git", default_features = false, features = ["svg_backend", "line_series"] }
+byteorder = "1"
