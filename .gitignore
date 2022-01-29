@@ -9,3 +9,6 @@ Cargo.lock
 
 *.bin
 *.wav
+*.aup
+*_data
+*.svg
