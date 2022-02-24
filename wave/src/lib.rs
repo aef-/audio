@@ -1,6 +1,6 @@
-use std::fs::File;
-use std::error::Error;
 use binrw::{binrw, until_exclusive, BinRead};
+use std::error::Error;
+use std::fs::File;
 use std::str;
 
 #[binrw]
@@ -143,17 +143,12 @@ pub fn open_file(file: &str) -> Result<Wave, Box<dyn Error>> {
 
     for chunk in my_file.chunks {
         match chunk {
-            Chunk::Riff(chunk) =>
-                riff = Some(chunk),
-            Chunk::Data(chunk) =>
-                data = Some(chunk),
-            Chunk::Format(chunk) =>
-                format = Some(chunk),
-            Chunk::Fact(chunk) =>
-                fact = Some(chunk),
-            Chunk::Peak(chunk) =>
-                peak = Some(chunk),
-            Chunk::Unhandled => ()
+            Chunk::Riff(chunk) => riff = Some(chunk),
+            Chunk::Data(chunk) => data = Some(chunk),
+            Chunk::Format(chunk) => format = Some(chunk),
+            Chunk::Fact(chunk) => fact = Some(chunk),
+            Chunk::Peak(chunk) => peak = Some(chunk),
+            Chunk::Unhandled => (),
         }
     }
 
@@ -169,8 +164,8 @@ pub fn open_file(file: &str) -> Result<Wave, Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use binrw::{io::Cursor, BinWrite};
     use std::fs;
-    use binrw::{BinWrite, io::Cursor};
 
     #[test]
     fn it_pulls_format_chunk_correctly() -> Result<(), Box<dyn Error>> {
@@ -182,7 +177,7 @@ mod tests {
         assert_eq!(f.num_channels, 2);
         assert_eq!(f.audio_format, WaveFormat::IeeeFloat);
 
-        let block_align = f.num_channels * f.bits_per_sample / 8; 
+        let block_align = f.num_channels * f.bits_per_sample / 8;
         let byte_rate = f.sample_rate * block_align as u32;
         assert_eq!(f.byte_rate, byte_rate);
         assert_eq!(f.byte_rate, 705600);
