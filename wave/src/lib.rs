@@ -17,8 +17,9 @@
 //! Next:
 //!
 //! ```
-//! n main() {
-//!     
+//! fn main() {
+//!     let file = File::open("./meta/16bit-2ch-float-peak.wav")?;
+//!     let wave: Wave = open_file(file)?;
 //! }
 //! ```
 //!
@@ -63,7 +64,9 @@ enum Chunk {
 pub enum WaveFormat {
     Pcm = 0x01,
     IeeeFloat = 0x03,
+    /// 8-bit ITU-T G.711 A-law
     Alaw = 0x06,
+    /// 8-bit ITU-T G.711 µ-law
     Mulaw = 0x07,
     Extensible = 0x08,
 }
@@ -80,8 +83,13 @@ pub struct FormatChunk {
     pub num_channels: u16,
     #[br(little)]
     pub sample_rate: u32,
+    /// Average number of bytes per second at which the data should be transferred
     #[br(little)]
     pub byte_rate: u32,
+    /// The block alignment (in bytes) of the waveform data. Playback
+    /// software needs to process a multiple of wBlockAlign bytes of data at
+    /// a time, so the value of wBlockAlign can be used for buffer
+    /// alignment. 
     #[br(little)]
     pub block_align: u16,
     #[br(little)]
@@ -123,6 +131,8 @@ pub struct DataChunk {
     pub data: Vec<u8>,
 }
 
+/// Indicates the peak amplitude of the soundfile for each channel.
+/// Timestamp is to 
 #[binrw]
 #[brw(magic = b"PEAK")]
 #[derive(Debug, PartialEq)]
@@ -131,18 +141,26 @@ pub struct PeakChunk {
     pub size: u32,
     #[br(little)]
     pub version: u32,
+    /// Unix epoch. This is used to see if the date of the peak data 
+    /// matches the modification date of the file. If not, the file
+    /// should be rescanned for new peak data.
     #[br(little)]
     pub timestamp: u32,
-    // TODO count should equal the number of channels returned from format
+    /// PositionPeak for each channel, in the same order as the samples
+    /// are interleaved.
     #[br(count = 2)]
     pub position_peak: Vec<Peak>,
 }
 
+/// Indicates the peak amplitude of the soundfile specific 
 #[binrw]
 #[derive(Debug, PartialEq)]
 pub struct Peak {
     #[br(little)]
     pub value: f32,
+    /// The sample frame number at which the peak occurs. Note
+    /// that the unit for position are sample frames, not sample points nor
+    /// bytes.
     #[br(little)]
     pub position: u32,
 }
