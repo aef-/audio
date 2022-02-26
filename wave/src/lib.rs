@@ -1,10 +1,44 @@
-use binrw::{binrw, until_exclusive, BinRead};
-use std::error::Error;
-use std::fs::File;
-use std::str;
+//! A library for reading and writing WAV files.
+//!
+//! This library is meant to provide access to all data within a WAV file,
+//! including FACT and PEAK chunks and extensible version of format chunks.
+//!
+//! It also supports `no_std` to be used on embedded systems.
+//!
+//! # Usage
+//!
+//! First, add this to your `Cargo.toml`
+//!
+//! ```toml
+//! [dependencies]
+//! waverly = "0.1"
+//! ```
+//!
+//! Next:
+//!
+//! ```
+//! n main() {
+//!     
+//! }
+//! ```
+//!
+//!
+
+#![cfg_attr(not(feature="std"), no_std)]
+
+#[cfg(not(feature="std"))]
+extern crate alloc;
+
+use binrw::{binrw, until_exclusive, BinRead, Error};
+use binrw::io::{Read, Seek};
+
+#[cfg(not(feature="std"))]
+use alloc::vec::Vec;
+
+pub type Result<T> = core::result::Result<T, Error>;
 
 #[binrw]
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 struct MyFile {
     #[br(parse_with = until_exclusive(|byte| byte == &Chunk::Unhandled))]
     chunks: Vec<Chunk>,
@@ -131,8 +165,7 @@ pub struct Wave {
     pub peak: Option<PeakChunk>,
 }
 
-pub fn open_file(file: &str) -> Result<Wave, Box<dyn Error>> {
-    let mut reader = File::open(file)?;
+pub fn open_file<T: Seek + Read>(mut reader: T) -> Result<Wave> {
     let my_file: MyFile = MyFile::read(&mut reader)?;
 
     let mut riff = None;
@@ -163,13 +196,16 @@ pub fn open_file(file: &str) -> Result<Wave, Box<dyn Error>> {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
     use super::*;
     use binrw::{io::Cursor, BinWrite};
     use std::fs;
+    use std::fs::File;
 
     #[test]
-    fn it_pulls_format_chunk_correctly() -> Result<(), Box<dyn Error>> {
-        let wave: Wave = open_file("./meta/16bit-2ch-float-peak.wav")?;
+    fn it_pulls_format_chunk_correctly() -> Result<()> {
+        let file = File::open("./meta/16bit-2ch-float-peak.wav")?;
+        let wave: Wave = open_file(file)?;
 
         let f = &wave.format;
         assert_eq!(f.sample_rate, 44100);
@@ -189,10 +225,11 @@ mod tests {
     }
 
     #[test]
-    fn it_writes_data_correctly() -> Result<(), Box<dyn Error>> {
-        let file_name = "./meta/16bit-2ch-float-peak.wav";
-        let wave: Wave = open_file(file_name)?;
-        let metadata = fs::metadata(file_name)?;
+    fn it_writes_data_correctly() -> Result<()> {
+        let filename = "./meta/16bit-2ch-float-peak.wav";
+        let file = File::open(filename)?;
+        let wave: Wave = open_file(file)?;
+        let metadata = fs::metadata(filename)?;
 
         let mut virt_file = Cursor::new(Vec::new());
         wave.write_to(&mut virt_file)?;
@@ -201,7 +238,7 @@ mod tests {
         assert_ne!(buf.len(), 0);
         let buf_iter = buf.into_iter();
         let riff_magic: Vec<u8> = buf_iter.take(4).collect();
-        assert_eq!(vec![82, 73, 70, 70], riff_magic);
+        assert_eq!([82, 73, 70, 70], riff_magic[..]);
 
         Ok(())
     }
