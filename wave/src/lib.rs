@@ -19,7 +19,10 @@
 //! ```
 //! fn main() {
 //!     let file = File::open("./meta/16bit-2ch-float-peak.wav")?;
-//!     let wave: Wave = open_file(file)?;
+//!     let wave: Wave = Wave::from_reader(file)?;
+//!
+//!     let mut virt_file = Cursor::new(Vec::new());
+//!     wave.write_to(&mut virt_file)?;
 //! }
 //! ```
 //!
@@ -30,13 +33,13 @@
 #[cfg(not(feature="std"))]
 extern crate alloc;
 
-use binrw::{binrw, until_exclusive, BinRead, Error};
-use binrw::io::{Read, Seek};
-
 #[cfg(not(feature="std"))]
 use alloc::vec::Vec;
 
-pub type Result<T> = core::result::Result<T, Error>;
+use binrw::{binrw, until_exclusive, io, BinRead};
+use binrw::io::{Read, Seek, ErrorKind};
+
+pub type Result<T> = core::result::Result<T, io::Error>;
 
 #[binrw]
 #[derive(Debug)]
@@ -95,12 +98,12 @@ pub struct FormatChunk {
     #[br(little)]
     pub bits_per_sample: u16,
     #[br(little, if(audio_format == WaveFormat::Extensible))]
-    pub extensible: Option<ExtensibleFormatChunk>,
+    pub extensible: Option<ExtensibleFormat>,
 }
 
 #[binrw]
 #[derive(Debug, PartialEq)]
-pub struct ExtensibleFormatChunk {
+pub struct ExtensibleFormat {
     #[br(little)]
     pub size: u16,
     #[br(little)]
@@ -131,8 +134,7 @@ pub struct DataChunk {
     pub data: Vec<u8>,
 }
 
-/// Indicates the peak amplitude of the soundfile for each channel.
-/// Timestamp is to 
+/// Indicates the peak amplitude of the soundfile
 #[binrw]
 #[brw(magic = b"PEAK")]
 #[derive(Debug, PartialEq)]
@@ -149,10 +151,10 @@ pub struct PeakChunk {
     /// PositionPeak for each channel, in the same order as the samples
     /// are interleaved.
     #[br(count = 2)]
-    pub position_peak: Vec<Peak>,
+    pub peaks: Vec<Peak>,
 }
 
-/// Indicates the peak amplitude of the soundfile specific 
+/// Amplitude peak
 #[binrw]
 #[derive(Debug, PartialEq)]
 pub struct Peak {
@@ -168,7 +170,7 @@ pub struct Peak {
 #[binrw]
 #[brw(magic = b"RIFF")]
 #[derive(Debug, PartialEq)]
-pub struct RiffChunk {
+struct RiffChunk {
     #[br(little)]
     chunk_size: u32,
 }
@@ -183,33 +185,50 @@ pub struct Wave {
     pub peak: Option<PeakChunk>,
 }
 
-pub fn open_file<T: Seek + Read>(mut reader: T) -> Result<Wave> {
-    let my_file: MyFile = MyFile::read(&mut reader)?;
+impl Wave {
+    pub fn from_reader<T: Seek + Read>(mut reader: T) -> Result<Wave> {
+        let my_file: MyFile = MyFile::read(&mut reader)?;
 
-    let mut riff = None;
-    let mut format = None;
-    let mut data = None;
-    let mut fact = None;
-    let mut peak = None;
-
-    for chunk in my_file.chunks {
-        match chunk {
-            Chunk::Riff(chunk) => riff = Some(chunk),
-            Chunk::Data(chunk) => data = Some(chunk),
-            Chunk::Format(chunk) => format = Some(chunk),
-            Chunk::Fact(chunk) => fact = Some(chunk),
-            Chunk::Peak(chunk) => peak = Some(chunk),
-            Chunk::Unhandled => (),
         }
-    }
 
-    Ok(Wave {
-        riff: riff.unwrap(),
-        data: data.unwrap(),
-        format: format.unwrap(),
-        fact,
-        peak,
-    })
+        let mut riff = None;
+        let mut format = None;
+        let mut data = None;
+        let mut fact = None;
+        let mut peak = None;
+
+        for chunk in my_file.chunks {
+            match chunk {
+                Chunk::Riff(chunk) => riff = Some(chunk),
+                Chunk::Data(chunk) => data = Some(chunk),
+                Chunk::Format(chunk) => format = Some(chunk),
+                Chunk::Fact(chunk) => fact = Some(chunk),
+                Chunk::Peak(chunk) => peak = Some(chunk),
+                Chunk::Unhandled => (),
+            }
+        }
+
+        if riff == None {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "RIFF chunk was not found in file."));
+        }
+
+        if data == None {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "DATA chunk was not found in file."));
+        }
+
+        if format == None {
+            return Err(io::Error::new(ErrorKind::InvalidInput, "FORMAT chunk was not found in file."));
+        }
+
+
+        Ok(Wave {
+            riff: riff.unwrap(),
+            data: data.unwrap(),
+            format: format.unwrap(),
+            fact,
+            peak,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -223,7 +242,7 @@ mod tests {
     #[test]
     fn it_pulls_format_chunk_correctly() -> Result<()> {
         let file = File::open("./meta/16bit-2ch-float-peak.wav")?;
-        let wave: Wave = open_file(file)?;
+        let wave: Wave = Wave::from_reader(file)?;
 
         let f = &wave.format;
         assert_eq!(f.sample_rate, 44100);
@@ -246,7 +265,7 @@ mod tests {
     fn it_writes_data_correctly() -> Result<()> {
         let filename = "./meta/16bit-2ch-float-peak.wav";
         let file = File::open(filename)?;
-        let wave: Wave = open_file(file)?;
+        let wave: Wave = Wave::from_reader(file)?;
         let metadata = fs::metadata(filename)?;
 
         let mut virt_file = Cursor::new(Vec::new());
